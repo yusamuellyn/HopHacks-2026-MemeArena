@@ -10,11 +10,12 @@ from scratch, so it never double-counts).
 import argparse
 import os
 import time
+from pathlib import Path
 import psycopg2
 from dotenv import load_dotenv
 from search_terms import MEME_SEARCH_TERMS
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 
 def get_conn():

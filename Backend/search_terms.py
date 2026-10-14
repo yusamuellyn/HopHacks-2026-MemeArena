@@ -56,6 +56,6 @@ MEME_SEARCH_TERMS = {
     "justice-for-peanut": ["peanut the squirrel", "justice for peanut"],
     "crashout": ["crash out", "crashing out", "crashout"],
     "yapper": ["yapper", "yapping meme", "professional yapper"],
-    "duolingo-owl": ["duolingo owl", "duo owl", "duolingo threat"],
+    "duolingo-owl": ["duolingo owl", "duo owl", "duolingo threat"]
 
 }

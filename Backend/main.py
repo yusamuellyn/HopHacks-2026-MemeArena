@@ -1,6 +1,7 @@
 import os
 from datetime import date, timedelta
 from contextlib import contextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +15,7 @@ from search_terms import MEME_SEARCH_TERMS
 
 from google import genai
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 gemini_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
@@ -354,50 +355,33 @@ def stats():
 
 @app.post("/api/battle")
 def battle(payload: BattleRequest):
-    left_terms = MEME_SEARCH_TERMS.get(payload.leftId)
-    right_terms = MEME_SEARCH_TERMS.get(payload.rightId)
-
-    if not left_terms or not right_terms:
-        raise HTTPException(status_code=400, detail="Unknown meme id")
-
-    left_conditions = " OR ".join(["body ILIKE %s"] * len(left_terms))
-    right_conditions = " OR ".join(["body ILIKE %s"] * len(right_terms))
-
-    left_params = [f"%{t}%" for t in left_terms]
-    right_params = [f"%{t}%" for t in right_terms]
-
-    # Each condition appears once in the CTE's SELECT (to tag matches) and
-    # once in the CTE's WHERE (to pull in only relevant rows).
-    params = left_params + right_params + left_params + right_params
+    left_id = require_meme(payload.leftId)
+    right_id = require_meme(payload.rightId)
 
     with db() as conn:
         cur = conn.cursor()
         cur.execute(
             f"""
             WITH bounds AS (
-                SELECT max(created_at) AS latest FROM tweets
+                SELECT max(created_at) AS latest FROM meme_mentions
             ),
-            matches AS (
+            scored AS (
                 SELECT
-                    id,
-                    created_at,
-                    ({left_conditions}) AS is_left,
-                    ({right_conditions}) AS is_right
-                FROM tweets
-                WHERE ({left_conditions}) OR ({right_conditions})
+                    meme_id,
+                    exp(-{DECAY_LAMBDA} * extract(epoch FROM (
+                        (SELECT latest FROM bounds) - created_at
+                    ))) AS weight
+                FROM meme_mentions
+                WHERE meme_id IN (%(left)s, %(right)s)
             )
             SELECT
-                count(DISTINCT id) FILTER (WHERE is_left) AS left_total,
-                count(DISTINCT id) FILTER (WHERE is_right) AS right_total,
-                coalesce(sum(exp(-{DECAY_LAMBDA} * extract(epoch FROM (
-                    (SELECT latest FROM bounds) - created_at
-                )))) FILTER (WHERE is_left), 0) AS left_score,
-                coalesce(sum(exp(-{DECAY_LAMBDA} * extract(epoch FROM (
-                    (SELECT latest FROM bounds) - created_at
-                )))) FILTER (WHERE is_right), 0) AS right_score
-            FROM matches
+                count(*) FILTER (WHERE meme_id = %(left)s) AS left_total,
+                count(*) FILTER (WHERE meme_id = %(right)s) AS right_total,
+                coalesce(sum(weight) FILTER (WHERE meme_id = %(left)s), 0) AS left_score,
+                coalesce(sum(weight) FILTER (WHERE meme_id = %(right)s), 0) AS right_score
+            FROM scored
             """,
-            params,
+            {"left": left_id, "right": right_id},
         )
         left_total, right_total, left_score, right_score = cur.fetchone()
         cur.close()
