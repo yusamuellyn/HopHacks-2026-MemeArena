@@ -1,5 +1,6 @@
 twitter-firehose/*.parquet
 *.csv
 .env
+x_accounts.db
 venv/
 node_modules/
